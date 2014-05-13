@@ -27,7 +27,7 @@ module.exports = (grunt) ->
     apiProxyEnabled = grunt.config.get("server.apiProxy.enabled")
     apiProxyPrefix  = grunt.config.get("server.apiProxy.prefix") || undefined
     apiProxyHost = grunt.config.get("server.apiProxy.host") || "localhost"
-    apiProxyChangeOrigin = grunt.config.get("server.apiProxy.changeOrigin") || true
+    #apiProxyChangeOrigin = grunt.config.get("server.apiProxy.changeOrigin") || true
     webPort = process.env.WEB_PORT || grunt.config.get("server.web.port") || 8000
     webRoot = grunt.config.get("server.base") || "generated"
     staticRoutes = grunt.config.get("server.staticRoutes")
@@ -49,12 +49,20 @@ module.exports = (grunt) ->
       addBodyParserCallbackToRoutes(app)
 
       if apiProxyEnabled
+        proxyServer = new httpProxy.createProxyServer
+          target:
+            host: apiProxyHost
+            port: apiPort
+          ws: true
+        proxyServer.on "error", handleProxyError
+        socketProxy(relativeUrlRoot, server, proxyServer)
+          
         if pushStateEnabled
           grunt.log.writeln("Proxying API requests prefixed with '#{apiProxyPrefix}' to #{apiProxyHost}:#{apiPort}")
-          app.use(prefixMatchingApiProxy(apiProxyPrefix, apiProxyHost, apiPort, apiProxyChangeOrigin, relativeUrlRoot, new httpProxy.RoutingProxy()))
+          app.use(prefixMatchingApiProxy(apiProxyPrefix, relativeUrlRoot, proxyServer))
         else
           grunt.log.writeln("Proxying API requests to #{apiProxyHost}:#{apiPort}")
-          app.use(apiProxy(apiProxyHost, apiPort, apiProxyChangeOrigin, relativeUrlRoot, new httpProxy.RoutingProxy()))
+          app.use(apiProxy(relativeUrlRoot, proxyServer))
 
       app.use(express.bodyParser())
       app.use(express.errorHandler())
@@ -89,24 +97,26 @@ module.exports = (grunt) ->
     res.write("API Proxying to `#{req.url}` failed with: `#{err.toString()}`")
     res.end()
 
-  prefixMatchingApiProxy = (prefix, host, port, changeOrigin, relativeUrlRoot = "", proxy) ->
+  prefixMatchingApiProxy = (prefix, relativeUrlRoot = "", proxy) ->
     prefixMatcher = new RegExp(prefix)
-
-    proxy.on "proxyError", handleProxyError
 
     return (req, res, next) ->
       if prefix and prefixMatcher.exec(req.path)
         req.url = relativeUrlRoot + req.url
-        proxy.proxyRequest(req, res, {host, port, changeOrigin})
+        proxy.web(req, res)
       else
         next()
 
-  apiProxy = (host, port, changeOrigin, relativeUrlRoot = "", proxy) ->
-    proxy.on "proxyError", handleProxyError
-
+  apiProxy = (relativeUrlRoot = "", proxy) ->
     return (req, res, next) ->
       req.url = relativeUrlRoot + req.url
-      proxy.proxyRequest(req, res, {host, port, changeOrigin})
+      proxy.web(req, res)
+
+  socketProxy = (relativeUrlRoot = "", server, proxy) ->
+    server.on "upgrade", (req, socket, head, options) ->
+      req.url = relativeUrlRoot + req.url
+      proxy.ws(req, socket, head, options)
+    return
 
   addBodyParserCallbackToRoutes = (app) ->
     bodyParser = express.bodyParser()
