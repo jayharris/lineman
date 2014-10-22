@@ -140,7 +140,6 @@ module.exports = (grunt) ->
 
   addBodyParserCallbackToRoutes = (app) ->
     bodyParser = require('body-parser')()
-
     _(["get", "post", "patch", "put", "delete", "options", "head"]).each (verb) ->
       _(app.routes[verb]).each (route) ->
         route.callbacks.unshift(bodyParser)
