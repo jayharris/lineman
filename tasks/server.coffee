@@ -64,10 +64,11 @@ module.exports = (grunt) ->
       else
         grunt.log.writeln("Proxying API requests to #{apiProxyHost}:#{apiPort}")
         app.use(apiProxy(relativeUrlRoot, proxyServer))
+
     else
       app.use require('body-parser')()
       userConfig.drawRoutes?(app)
-      addBodyParserCallbackToRoutes(app)
+      #addBodyParserCallbackToRoutes(app)
 
     app.use(pushStateSimulator(process.cwd(),webRoot)) if pushStateEnabled
 
@@ -110,6 +111,12 @@ module.exports = (grunt) ->
     res.write("API Proxying to `#{req.url}` failed with: `#{err.toString()}`")
     res.end()
 
+  handleError = (err, req, res) ->
+    return unless res
+    res.statusCode = 500
+    res.write("Request to `#{req.url}` failed with: `#{err.toString()}`")
+    res.end()
+
   prefixMatchingApiProxy = (prefix, relativeUrlRoot = "", proxy) ->
     prefixMatcher = new RegExp(prefix)
 
@@ -133,6 +140,7 @@ module.exports = (grunt) ->
 
   addBodyParserCallbackToRoutes = (app) ->
     bodyParser = require('body-parser')()
+
     _(["get", "post", "patch", "put", "delete", "options", "head"]).each (verb) ->
       _(app.routes[verb]).each (route) ->
         route.callbacks.unshift(bodyParser)
